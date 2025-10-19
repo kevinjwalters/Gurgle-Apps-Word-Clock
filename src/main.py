@@ -23,7 +23,13 @@ DISPLAY_MODE_RANDOM = 'random'
 
 current_display_mode = DISPLAY_MODE_RAINBOW
 
+board_type = Board().type
+
+# Board specific constants
+PICO_BASE_ADC = 26
+
 disable_access_point = False
+light_sensor_pin = None
 brightness = 2
 # Color data for different modes
 single_color = (0, 0, 255)
@@ -112,10 +118,17 @@ def scan_for_devices():
 
 def read_temperature():
     # pico only
-    if Board().type != Board.BoardType.PICO_W:
+    if board_type not in Board.BoardType.FAMILY_PICO:
         return 0
     reading = machine.ADC(4).read_u16() * 3.3 / 65536
     return 27 - (reading - 0.706) / 0.001721
+
+def read_ambient_light():
+    if light_sensor_pin is not None and board_type in Board.BoardType.FAMILY_PICO:
+        return machine.ADC(light_sensor_pin - PICO_BASE_ADC).read_u16() / 65536.0
+
+    return None
+
 
 def test_dns():
     global last_dns_check_status
@@ -214,13 +227,14 @@ def time_to_matrix():
     if minute > 0:
         word = merge_chars(word, clockFont['m_'+str(minute)])
         colour_per_word_array = merge_color_array(colour_per_word_array, clockFont['m_'+str(minute)], minute_color)
+
+    set_brightness(brightness, save=False)
     if config['ENABLE_MAX7219']:
         spi_matrix.show_char(word)
-    if config['ENABLE_HT16K33']:            
+    if config['ENABLE_HT16K33']:
         if not i2c_matrix.show_char(i2c_matrix.reverse_char(word)):
             print("Error writing to matrix")
     if config['ENABLE_WS2812B']:
-        ws2812b_matrix.set_brightness(brightness)
         display_fuction = display_modes.get(current_display_mode)
         if display_fuction:
             display_fuction(word)
@@ -280,7 +294,7 @@ async def scroll_message(font, message='hello', delay=0.1):
                 # Combine the bits from current and next character rows
                 shifted_row = current_row & 0xFF | next_row
                 shifted_char.append(shifted_row)
-            
+
             # Display logic for different display types
             if config['ENABLE_MAX7219']:
                 spi_matrix.show_char(shifted_char)
@@ -288,7 +302,7 @@ async def scroll_message(font, message='hello', delay=0.1):
                 i2c_matrix.show_char(i2c_matrix.reverse_char(shifted_char))
             if config['ENABLE_WS2812B']:
                 ws2812b_matrix.show_char_with_color_array(shifted_char, ws2812b_matrix.get_rainbow_array())
-            
+
             await asyncio.sleep(delay)
 
             # Update char to the newly shifted_char for the next iteration
@@ -313,17 +327,23 @@ def merge_color_array(color_array, char, color):
                 color_array[i * 8 + j] = color
     return color_array
 
-def set_brightness(new_brightness):
-    global brightness
-    brightness = new_brightness
-    config['BRIGHTNESS'] = brightness
-    save_config(config)
+def set_brightness(new_brightness, save=True):
+    global current_brightness
+    display_brightness = new_brightness
+    if light_sensor_pin is not None:
+        display_brightness = int(ambient_light * (ws2812b_matrix.max_brightness + 0.99))  ### TODO find better way to get max
+    if save:
+        config['BRIGHTNESS'] = new_brightness
+        save_config(config)
+    if current_brightness == display_brightness:
+        return
+    current_brightness = display_brightness
     if config['ENABLE_MAX7219']:
-        spi_matrix.set_brightness(brightness)
+        spi_matrix.set_brightness(display_brightness)
     if config['ENABLE_HT16K33']:
-        i2c_matrix.set_brightness(brightness)
+        i2c_matrix.set_brightness(display_brightness)
     if config['ENABLE_WS2812B']:
-        ws2812b_matrix.set_brightness(brightness)
+        ws2812b_matrix.set_brightness(display_brightness)
 
 def display_rainbow_mode(word):
     ws2812b_matrix.show_char_with_color_array(word, ws2812b_matrix.get_rainbow_array())
@@ -525,15 +545,15 @@ async def connect_to_wifi():
         print("No Wi-Fi SSID set")
         return False
 
-        
+
 async def main():
-    global ntp_synced_at, last_wifi_connected_time, last_wifi_disconnected_time, disable_access_point
+    global ntp_synced_at, last_wifi_connected_time, last_wifi_disconnected_time, disable_access_point, ambient_light
     ap_connnected = False
     await connect_to_wifi()
     if not server.is_wifi_connected() and not disable_access_point:
         ap_connnected = server.start_access_point('gurgleapps', 'gurgleapps')
         await scroll_message(matrix_fonts.textFont1, "No Wi-Fi", 0.05)
-    print("Access Point active: " + str(ap_connnected)) 
+    print("Access Point active: " + str(ap_connnected))
     while True:
         if server.is_access_point_active():
             if server.is_wifi_connected():
@@ -549,6 +569,9 @@ async def main():
                 if delta > 60: # Start access point after 60 seconds of Wi-Fi disconnection
                     ap_connnected = server.start_access_point('gurgleapps', 'gurgleapps')
                     print("Access Point started: " + str(ap_connnected))
+        ambient_light = read_ambient_light()
+        if light_sensor_pin is not None:
+            set_brightness(brightness, save=False)
         time_to_matrix()
         if ntp_synced_at < (time.time() - 3600) and server.is_wifi_connected(): # Sync time every hour
             await sync_ntp_time()
@@ -566,7 +589,7 @@ config = read_config()
 if config is None:
     raise SystemExit("Stopping execution due to missing configuration.")
 
-brightness = config.get('BRIGHTNESS', 2)
+brightness = config.get('BRIGHTNESS')
 single_color = config.get('SINGLE_COLOR', (0, 0, 255))
 minute_color = config.get('MINUTE_COLOR', (0, 255, 0))
 hour_color = config.get('HOUR_COLOR', (255, 0, 0))
@@ -574,8 +597,13 @@ past_to_color = config.get('PAST_TO_COLOR', (0, 0, 255))
 current_display_mode = config.get('DISPLAY_MODE', DISPLAY_MODE_RAINBOW)
 time_offset = config.get('TIME_OFFSET', 0)
 disable_access_point = config.get('DISABLE_ACCESS_POINT', False)
+light_sensor_pin = config.get('LIGHT_SENSOR_PIN')
+if brightness is None:
+    brightness = 17 if config['ENABLE_MAX7219'] else (15 if config['ENABLE_HT16K33'] else 2)
 
-        
+ambient_light = read_ambient_light()
+
+
 if config['ENABLE_HT16K33']:
     scan_for_devices()
     i2c_matrix = ht16k33_matrix(config['I2C_SDA'], config['I2C_SCL'], config['I2C_BUS'],  int(config['I2C_ADDRESS'], 16))
@@ -583,11 +611,12 @@ if config['ENABLE_HT16K33']:
 if config['ENABLE_MAX7219']:
     spi = machine.SPI(config['SPI_PORT'], sck=machine.Pin(config['SPI_SCK']), mosi=machine.Pin(config['SPI_MOSI']))
     spi_matrix = max7219_matrix(spi, machine.Pin(config['SPI_CS'], machine.Pin.OUT, True))
-    spi_matrix.set_brightness(17)
 
 if config['ENABLE_WS2812B']:
     ws2812b_matrix = ws2812b_matrix(config['WS2812B_PIN'], 8, 8)
-    ws2812b_matrix.set_brightness(brightness)
+
+current_brightness = None # this is the numerical level
+set_brightness(brightness, save=False)
 
 startup_animation()
 
@@ -603,4 +632,3 @@ server.set_cors(True)
 setup_routes(server)
 
 asyncio.run(server.start_server_with_background_task(main))
-
