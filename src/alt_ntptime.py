@@ -16,9 +16,11 @@ try:
     import uselect as select
 except ImportError:
     import select
-try: import urequests as requests
+try:
+    import urequests as requests
 except ImportError:
     import requests
+
 
 NTP_SERVER = 'pool.ntp.org'
 NTP_DELTA = 3155673600 if gmtime(0)[0] == 2000 else 2208988800
@@ -37,7 +39,7 @@ def get_ntp_time(server=NTP_SERVER, timeout=1):
         poller = select.poll()
         poller.register(s, select.POLLIN)
         s.sendto(NTP_QUERY, addr)
-        if poller.poll(timeout * 1000):  # timeout in milliseconds
+        if poller.poll(round(timeout * 1000)):  # timeout in milliseconds
             msg = s.recv(48)
             if len(msg) < 48:
                 raise ValueError("Received incomplete NTP response.")
