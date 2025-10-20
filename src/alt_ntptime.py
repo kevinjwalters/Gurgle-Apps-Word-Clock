@@ -20,7 +20,10 @@ try:
     import urequests as requests
 except ImportError:
     import requests
-
+try:
+    import uerrno as errno
+except ImportError:
+    import errno
 
 NTP_SERVER = 'pool.ntp.org'
 NTP_DELTA = 3155673600 if gmtime(0)[0] == 2000 else 2208988800
@@ -46,7 +49,7 @@ def get_ntp_time(server=NTP_SERVER, timeout=1):
             timestamp = struct.unpack("!I", msg[40:44])[0]
             return timestamp - NTP_DELTA
         else:
-            raise TimeoutError("NTP request timed out.")
+            raise OSError(errno.ETIMEDOUT, "NTP request timed out.")
     finally:
         s.close()
 
