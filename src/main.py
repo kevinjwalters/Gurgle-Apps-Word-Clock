@@ -6,14 +6,18 @@ import ntptime
 import alt_ntptime
 import utime as time
 from gurgleapps_webserver import GurgleAppsWebserver
+from background import MatrixBackground, DigitalRainMB, MinutesOffsetMB, MinutesDigitMB
 import uasyncio as asyncio
 import json
 import matrix_fonts
 import urandom as random
 from board import Board
+
 import socket
 
 config_file = 'config.json'
+
+NTP_HOSTS = ['pool.ntp.org', 'time.nist.gov', 'time.google.com', 'time.windows.com']
 
 # Display modes
 DISPLAY_MODE_RAINBOW = 'rainbow'
@@ -23,16 +27,28 @@ DISPLAY_MODE_RANDOM = 'random'
 
 current_display_mode = DISPLAY_MODE_RAINBOW
 
+BACKGROUND_BLANK = 'blank'
+BACKGROUND_DIGITAL_RAIN = 'digital_rain'
+BACKGROUND_MINUTES_OFFSET = 'minutes_offset'
+BACKGROUND_MINUTES_DIGIT = 'minutes_digit'
+
+current_background_mode = BACKGROUND_BLANK
+
 board_type = Board().type
 
 # Board specific constants
 PICO_BASE_ADC = 26
+
+# For matrix displays
+WIDTH = 8
+HEIGHT = 8
 
 disable_access_point = False
 light_sensor_pin = None
 brightness = 2
 # Color data for different modes
 single_color = (0, 0, 255)
+
 # Color data for different words
 minute_color = (0, 255, 0)
 hour_color = (255, 0, 0)
@@ -126,7 +142,6 @@ def read_temperature():
 def read_ambient_light():
     if light_sensor_pin is not None and board_type in Board.BoardType.FAMILY_PICO:
         return machine.ADC(light_sensor_pin - PICO_BASE_ADC).read_u16() / 65536.0
-
     return None
 
 
@@ -148,9 +163,8 @@ async def sync_ntp_time(use_alternative=False, timeout=2.0):
     if last_ntp_sync_attempt and (time.time() - last_ntp_sync_attempt) < ntp_retry_interval:
         print(f"Last NTP sync attempt was less than {ntp_retry_interval} seconds ago.")
         return
-    mtp_hosts = ['pool.ntp.org', 'time.nist.gov', 'time.google.com', 'time.windows.com']
     ntptime.timeout = timeout
-    for ntp_host in mtp_hosts:
+    for ntp_host in NTP_HOSTS:
         try:
             if use_alternative:
                 alt_ntptime.settime(ntp_host, timeout=timeout)
@@ -160,13 +174,15 @@ async def sync_ntp_time(use_alternative=False, timeout=2.0):
             ntp_synced_at = time.time()
             last_wifi_connected_time = time.ticks_ms()
             print(f"Time synced with {ntp_host} successfully using alternative method: {use_alternative}")
-            return
+            return True
         except OSError as e:
             await asyncio.sleep(3)
             print(f"Error syncing time with {ntp_host}: {e} using alternative method.{use_alternative}")
+
+    sync_ok = False
     if not use_alternative:
         print("Standard methods failed, trying alternative methods.")
-        await sync_ntp_time(use_alternative=True)
+        sync_ok = await sync_ntp_time(use_alternative=True)
     else:
         # both methods failed
         print(f"Failed to sync time with all NTP servers. DNS check status: {test_dns()}")
@@ -184,7 +200,13 @@ async def sync_ntp_time(use_alternative=False, timeout=2.0):
             print('wifi up, dns ok, but still failed to sync time rebooting')
             machine.reset()
     last_ntp_sync_attempt = time.time()
+    return sync_ok
 
+def get_all_times():
+    epoch_t_ns = time.time_ns()
+    epoch_t = epoch_t_ns // 1_000_000_000
+    local_t = time.localtime(time.time() + time_offset)
+    return (local_t, epoch_t, epoch_t_ns)
 
 def get_corrected_time():
     return time.localtime(time.time() + time_offset)
@@ -202,7 +224,7 @@ def set_manual_time(year, month, day, hour, minute, second):
 def time_to_matrix():
     global colour_per_word_array
     word = [0, 0, 0, 0, 0, 0, 0, 0]
-    now = get_corrected_time()
+    (now, epoch_time, epoch_time_ns) = get_all_times()
     hour = (now[3])
     minute = now[4]
     colour_per_word_array.clear()
@@ -235,9 +257,10 @@ def time_to_matrix():
         if not i2c_matrix.show_char(i2c_matrix.reverse_char(word)):
             print("Error writing to matrix")
     if config['ENABLE_WS2812B']:
-        display_fuction = display_modes.get(current_display_mode)
-        if display_fuction:
-            display_fuction(word)
+        background_modes.get(current_background_mode).setTime(now, epoch_time, epoch_time_ns)
+        display_function = display_modes.get(current_display_mode)
+        if display_function:
+            display_function(word)
 
 def merge_chars(char1, char2):
     for i in range(8):
@@ -327,11 +350,23 @@ def merge_color_array(color_array, char, color):
                 color_array[i * 8 + j] = color
     return color_array
 
+
+def ambient_to_brightness(ambient_level, max_bri):
+    # A mapping that works reasonably well
+    # with LTR-4206 + 10k on Pi Pico 2 W
+    if ambient_level < 0.03:
+        bri = int(ambient_level * 100.0)
+    else:
+        bri = 3 + int((ambient_level - 0.03) * (max_bri - 3 + 0.99))
+    return min(bri, max_bri)
+
+
 def set_brightness(new_brightness, save=True):
     global current_brightness
     display_brightness = new_brightness
     if light_sensor_pin is not None:
-        display_brightness = int(ambient_light * (ws2812b_matrix.max_brightness + 0.99))  ### TODO find better way to get max
+        ### TODO find better way to get max
+        display_brightness = ambient_to_brightness(ambient_light, ws2812b_matrix.max_brightness)
     if save:
         config['BRIGHTNESS'] = new_brightness
         save_config(config)
@@ -344,6 +379,19 @@ def set_brightness(new_brightness, save=True):
         i2c_matrix.set_brightness(display_brightness)
     if config['ENABLE_WS2812B']:
         ws2812b_matrix.set_brightness(display_brightness)
+
+def set_background_mode(new_background_mode, save=True):
+    global current_background_mode
+    if background_modes[current_background_mode].running:
+        background_modes[current_background_mode].stop()
+    current_background_mode = new_background_mode
+    background_modes[current_background_mode].start(*get_all_times())
+    if config['ENABLE_WS2812B']:
+        ws2812b_matrix.set_background(background_modes[current_background_mode])
+
+    if save:
+        config['BACKGROUND_MODE'] = new_background_mode
+        save_config(config)
 
 def display_rainbow_mode(word):
     ws2812b_matrix.show_char_with_color_array(word, ws2812b_matrix.get_rainbow_array())
@@ -450,7 +498,8 @@ async def set_clock_settings_request(request, response):
     global hour_color
     global past_to_color
     print(request.post_data)
-    set_brightness(int(request.post_data['brightness']))
+    set_brightness(int(request.post_data['brightness']))  # TODO
+    set_background_mode(request.post_data['background_mode'], save=False)
     current_display_mode = request.post_data['display_mode']
     single_color = (int(request.post_data['single_color'][0]), int(request.post_data['single_color'][1]), int(request.post_data['single_color'][2]))
     minute_color = (int(request.post_data['minute_color'][0]), int(request.post_data['minute_color'][1]), int(request.post_data['minute_color'][2]))
@@ -458,6 +507,7 @@ async def set_clock_settings_request(request, response):
     past_to_color = (int(request.post_data['past_to_color'][0]), int(request.post_data['past_to_color'][1]), int(request.post_data['past_to_color'][2]))
     config['BRIGHTNESS'] = brightness
     config['DISPLAY_MODE'] = current_display_mode
+    config['BACKGROUND_MODE'] = current_background_mode
     config['SINGLE_COLOR'] = single_color
     config['MINUTE_COLOR'] = minute_color
     config['HOUR_COLOR'] = hour_color
@@ -485,6 +535,7 @@ def settings_object():
     return {
         'brightness': brightness,
         'display_mode': current_display_mode,
+        'background_mode': current_background_mode,
         'single_color': single_color,
         'minute_color': minute_color,
         'hour_color': hour_color,
@@ -554,6 +605,9 @@ async def main():
         ap_connnected = server.start_access_point('gurgleapps', 'gurgleapps')
         await scroll_message(matrix_fonts.textFont1, "No Wi-Fi", 0.05)
     print("Access Point active: " + str(ap_connnected))
+    last_ambient_at = 0
+    target_rate = 0
+    background_on = False
     while True:
         if server.is_access_point_active():
             if server.is_wifi_connected():
@@ -569,19 +623,40 @@ async def main():
                 if delta > 60: # Start access point after 60 seconds of Wi-Fi disconnection
                     ap_connnected = server.start_access_point('gurgleapps', 'gurgleapps')
                     print("Access Point started: " + str(ap_connnected))
-        ambient_light = read_ambient_light()
+
+        epoch_time = time.time()
+        # Once a second update the ambient reading with simple IIR filtering
+        if last_ambient_at != epoch_time:
+            ambient_light = ambient_light * 0.875 + read_ambient_light() * 0.125
+            last_ambient_at = epoch_time
+
         if light_sensor_pin is not None:
             set_brightness(brightness, save=False)
         time_to_matrix()
-        if ntp_synced_at < (time.time() - 3600) and server.is_wifi_connected(): # Sync time every hour
-            await sync_ntp_time()
-        await asyncio.sleep(10)
+        if ntp_synced_at < (epoch_time - 3600) and server.is_wifi_connected(): # Sync time every hour
+            good_sync = await sync_ntp_time()
+            if good_sync and not background_on:
+                set_background_mode(current_background_mode, save=False)
+                background_on = True
+
+        # calculate approximate pause based on desired frames per second
+        if background_modes[current_background_mode].running:
+            target_rate = background_modes[current_background_mode].update_rate
+        pause_s = 1.0 / target_rate if target_rate > 0 else 10
+        await asyncio.sleep(pause_s)
 
 display_modes = {
     DISPLAY_MODE_RAINBOW: display_rainbow_mode,
     DISPLAY_MODE_SINGLE_COLOR: display_single_color_mode,
     DISPLAY_MODE_COLOR_PER_WORD: display_color_per_word_mode,
     DISPLAY_MODE_RANDOM: display_random_mode
+}
+
+background_modes = {
+    BACKGROUND_BLANK: MatrixBackground(WIDTH, HEIGHT),
+    BACKGROUND_DIGITAL_RAIN: DigitalRainMB(WIDTH, HEIGHT),
+    BACKGROUND_MINUTES_OFFSET: MinutesOffsetMB(WIDTH, HEIGHT),
+    BACKGROUND_MINUTES_DIGIT: MinutesDigitMB(WIDTH, HEIGHT)
 }
 
 config = read_config()
@@ -595,6 +670,7 @@ minute_color = config.get('MINUTE_COLOR', (0, 255, 0))
 hour_color = config.get('HOUR_COLOR', (255, 0, 0))
 past_to_color = config.get('PAST_TO_COLOR', (0, 0, 255))
 current_display_mode = config.get('DISPLAY_MODE', DISPLAY_MODE_RAINBOW)
+current_background_mode = config.get('BACKGROUND_MODE', BACKGROUND_BLANK)
 time_offset = config.get('TIME_OFFSET', 0)
 disable_access_point = config.get('DISABLE_ACCESS_POINT', False)
 light_sensor_pin = config.get('LIGHT_SENSOR_PIN')
@@ -613,7 +689,8 @@ if config['ENABLE_MAX7219']:
     spi_matrix = max7219_matrix(spi, machine.Pin(config['SPI_CS'], machine.Pin.OUT, True))
 
 if config['ENABLE_WS2812B']:
-    ws2812b_matrix = ws2812b_matrix(config['WS2812B_PIN'], 8, 8)
+    ws2812b_matrix = ws2812b_matrix(config['WS2812B_PIN'],
+                                    WIDTH, HEIGHT)
 
 current_brightness = None # this is the numerical level
 set_brightness(brightness, save=False)
