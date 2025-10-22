@@ -8,7 +8,8 @@ class ws2812b_matrix:
         self.height = height
         self.background = background
 
-        self.np = neopixel.NeoPixel(machine.Pin(pin), width*height)
+        self.np = neopixel.NeoPixel(machine.Pin(pin), width * height,
+                                    timing=(400-100, 850+100, 800, 450))
         self.gamma = 2.2
         self.gamma_table = [int(pow(x / 255.0, self.gamma) * 255.0 + 1.0) for x in range(256)]
         self.gamma_table[0] = 0
