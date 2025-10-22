@@ -11,7 +11,7 @@ class ws2812b_matrix:
         self.np = neopixel.NeoPixel(machine.Pin(pin), width * height,
                                     timing=(400-100, 850+100, 800, 450))
         self.gamma = 2.2
-        self.gamma_table = [int(pow(x / 255.0, self.gamma) * 255.0 + 1.0) for x in range(256)]
+        self.gamma_table = bytearray([int(pow(x / 255.0, self.gamma) * 254.99 + 1.0) for x in range(256)])
         self.gamma_table[0] = 0
         self.lut = bytearray(list(range(256)))
         self.char = [0x3c,0x56,0x93,0xdb,0xff,0xff,0xdd,0x89]
