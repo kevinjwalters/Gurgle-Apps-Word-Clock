@@ -19,6 +19,8 @@ class ws2812b_matrix:
         self.max_brightness = 15
         self.gamma_correction = True
         count = self.width * self.height
+        self._rainbow = [ self.wheel(int(x * 256 / count)) for x in range(count)]
+
         self.set_brightness(self.brightness)
 
 
@@ -86,11 +88,7 @@ class ws2812b_matrix:
         return self.char
 
     def get_rainbow_array(self):
-        rainbow = []
-        for i in range(self.width * self.height):
-            color_position = int(i * 256 / (self.width * self.height))
-            rainbow.append(self.wheel(color_position))
-        return rainbow
+        return self._rainbow
 
     def set_background(self, background):
         self.background = background
