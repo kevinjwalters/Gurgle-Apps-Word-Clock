@@ -205,7 +205,7 @@ async def sync_ntp_time(use_alternative=False, timeout=2.0):
 def get_all_times():
     epoch_t_ns = time.time_ns()
     epoch_t = epoch_t_ns // 1_000_000_000
-    local_t = time.localtime(time.time() + time_offset)
+    local_t = time.localtime(epoch_t + time_offset)
     return (local_t, epoch_t, epoch_t_ns)
 
 def get_corrected_time():
