@@ -1,6 +1,13 @@
 import machine
 import neopixel
 
+
+_MP_CLASSIC_TIMING = (400-100, 850+100, 800, 450)
+_CUSTOM_TIMING = [sum(x) for x in zip(_MP_CLASSIC_TIMING,
+                                     (-50, +50 , 0, 0))]
+_CP_2022_TIMIMG =  (300, 900, 700, 500)
+
+
 class ws2812b_matrix:
 
     def __init__(self, pin, width, height, background=None):
@@ -9,7 +16,7 @@ class ws2812b_matrix:
         self.background = background
 
         self.np = neopixel.NeoPixel(machine.Pin(pin), width * height,
-                                    timing=(400-100, 850+100, 800, 450))
+                                    timing=_CP_2022_TIMIMG)
         self.gamma = 2.2
         self.gamma_table = bytearray([int(pow(x / 255.0, self.gamma) * 254.99 + 1.0) for x in range(256)])
         self.gamma_table[0] = 0
