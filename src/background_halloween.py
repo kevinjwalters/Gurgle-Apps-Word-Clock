@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 from background import MatrixBackground, LOCAL_T, EPOCH_T_NS
-from ws2812b_matrix import wheel
+#from ws2812b_matrix import wheel
 
 
 class HalloweenMB(MatrixBackground):
@@ -16,7 +16,7 @@ class HalloweenMB(MatrixBackground):
                               0x00, 0x00, 0x02, 0x02, 0x02, 0x00, 0x00,
                               0x00, 0x00, 0x00, 0x02, 0x02, 0x02, 0x02])
     SPOOKY_GHOST_WIDTH = 7
-    SPOOKY_GHOST_HEIGHT = 8
+    SPOOKY_GHOST_HEIGHT = len(SPOOKY_GHOST) // SPOOKY_GHOST_WIDTH
     SPOOKY_EYE_COLOR = [0, 0, 0]
     SPOOKY_GHOST_PALETTE = [MatrixBackground.TRANSPARENT,
                             MatrixBackground.TRANSPARENT,    # SPOOKY_EYE_COLOR,
@@ -32,7 +32,7 @@ class HalloweenMB(MatrixBackground):
                          0x00, 0x01, 0x02, 0x01, 0x02, 0x01, 0x02, 0x01, 0x02, 0x01, 0x02, 0x00,
                          0x00, 0x00, 0x02, 0x01, 0x02, 0x00, 0x00, 0x01, 0x02, 0x01, 0x00, 0x00])
     PUMPKIN_WIDTH = 12
-    PUMPKIN_HEIGHT = 8
+    PUMPKIN_HEIGHT = len(PUMPKIN) // PUMPKIN_WIDTH
     PUMPKIN_PALETTE = [MatrixBackground.TRANSPARENT,
                        (160, 80, 0),
                        (100, 45, 0),
@@ -52,7 +52,7 @@ class HalloweenMB(MatrixBackground):
            0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00
            ]
     HAT_WIDTH = 8
-    HAT_HEIGHT = 10
+    HAT_HEIGHT = len(HAT) // HAT_WIDTH
     HAT_PALETTE = [MatrixBackground.TRANSPARENT,
                    (0, 0, 120),
                    (0, 130, 0),
@@ -65,39 +65,17 @@ class HalloweenMB(MatrixBackground):
         self.color = (16, 8, 0)
         self.update_rate = 4
 
-    def renderDISABLED(self, lut):
-        mins = self._time[LOCAL_T][4]
-        secs = self._time[LOCAL_T][5]
-        millisecs = self._time[EPOCH_T_NS] // 1_000_000 % 1000
-        hires_secs = secs + millisecs * 1e-3
 
-        ### TODO try modifying the palette?
-        ### TODO add a mix setting
-        ### TODO add an ontop setting
-        #if mins % 2 == 1 and 0 <= secs < 10:
-        if 30 + 0 <= secs < 30 + 10:
-            self.clearScreen()
-            self._write_sprite(self.PUMPKIN,
-                               self.PUMPKIN_PALETTE,
-                               lut,
-                               intensity=1.0, width=12,
-                               #shift_x=10 - round(11 - hires_secs) * 2,
-                               shift_x=10 - round(11 - hires_secs + 30) * 2,
-                               shift_y=0)
-        else:
-            return None
-
-        return self.image
-
-    ### TODO - work out how to deal with foreground and background together and a single image!!
+    ### TODO - work out how to deal with foreground and background together vs single image!!
     def renderForeground(self, lut):
         mins = self._time[LOCAL_T][4]
         secs = self._time[LOCAL_T][5]
         millisecs = self._time[EPOCH_T_NS] // 1_000_000 % 1000
         hires_secs = secs + millisecs * 1e-3
 
-        # if mins % 2 == 0 and 0 <= secs < 8:
-        if 0 <= secs < 8:
+        ### Show an image as the displayed time in words changes
+        ### Cycling through the three images
+        if mins % 15 == 3 and 0 <= secs < 8:
             self.clearScreen()
             # ramp the brightness up and then down
             sprite_bri = min(1.0, 0.05 + 0.3 * (4.0 - abs(4 - hires_secs)))
@@ -113,7 +91,7 @@ class HalloweenMB(MatrixBackground):
                                height=self.SPOOKY_GHOST_HEIGHT,
                                shift_x=x_wiggle,
                                shift_y=0)
-        elif 20 + 0 <= secs < 20 + 10:
+        elif mins % 15 == 8 and 0 <= secs < 10:
             self.clearScreen()
             self._write_sprite(self.PUMPKIN,
                                self.PUMPKIN_PALETTE,
@@ -121,10 +99,9 @@ class HalloweenMB(MatrixBackground):
                                intensity=1.0,
                                width=self.PUMPKIN_WIDTH,
                                height=self.PUMPKIN_HEIGHT,
-                               #shift_x=10 - round(11 - hires_secs) * 2,
-                               shift_x=10 - round((11 - hires_secs + 20) * 2),
+                               shift_x=10 - round((11 - hires_secs) * 2),
                                shift_y=0)
-        elif 40 + 0 <= secs < 40 + 10:
+        elif mins % 15 == 13 and 0 <= secs < 10:
             self.clearScreen()
             self._write_sprite(self.HAT,
                                self.HAT_PALETTE,
@@ -132,9 +109,8 @@ class HalloweenMB(MatrixBackground):
                                intensity=1.0,
                                width=self.HAT_WIDTH,
                                height=self.HAT_HEIGHT,
-                               #shift_x=10 - round(11 - hires_secs) * 2,
                                shift_x=0,
-                               shift_y=10 - round((11 - hires_secs + 40) * 2))
+                               shift_y=10 - round((11 - hires_secs) * 2))
         else:
             return None
 
