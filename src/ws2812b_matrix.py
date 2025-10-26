@@ -1,12 +1,25 @@
 import machine
 import neopixel
 
+from background import MatrixBackground
 
 _MP_CLASSIC_TIMING = (400-100, 850+100, 800, 450)
 _CUSTOM_TIMING = [sum(x) for x in zip(_MP_CLASSIC_TIMING,
                                      (-50, +50 , 0, 0))]
 _CP_2022_TIMIMG =  (300, 900, 700, 500)
 
+def wheel(pos):
+    # Input a value 0 to 255 to get a color value.
+    # The colors are a transition r - g - b - back to r.
+    if pos < 0 or pos > 255:
+        return (0, 0, 0)
+    if pos < 85:
+        return (255 - pos * 3, pos * 3, 0)
+    if pos < 170:
+        pos -= 85
+        return (0, 255 - pos * 3, pos * 3)
+    pos -= 170
+    return (pos * 3, 0, 255 - pos * 3)
 
 class ws2812b_matrix:
 
@@ -26,7 +39,7 @@ class ws2812b_matrix:
         self.max_brightness = 15
         self.gamma_correction = True
         count = self.width * self.height
-        self._rainbow = [ self.wheel(int(x * 256 / count)) for x in range(count)]
+        self._rainbow = [ wheel(int(x * 256 / count)) for x in range(count)]
 
         self.set_brightness(self.brightness)
 
@@ -41,18 +54,27 @@ class ws2812b_matrix:
         self.char = char
         fixed_adjusted_color = self.adjust_for_brightness(color_any) if len(color_any) == 3 else None
         # set_time() must be called on background beforehand for render to work
-        bg_image = None if self.background is None else self.background.render(self.lut)
+        bg_image = None if self.background is None else self.background.renderBackground(self.lut)
+        fg_image = None if self.background is None else self.background.renderForeground(self.lut)
         for i in range(self.height):
             for j in range(self.width):
                 np_idx = i * self.width + j
-                if char[i] & (1 << self.width - 1 - j):
-                    if fixed_adjusted_color is None:
-                        adjusted_color = self.adjust_for_brightness(color_any[i*8+j])
-                        self.np[np_idx] = adjusted_color
-                    else:
-                        self.np[np_idx] = fixed_adjusted_color
+                im_idx = 3 * np_idx
+                # (255, 255, 255) is used for transparency in foreground image
+                if (fg_image is not None and
+                    not (fg_image[im_idx] == MatrixBackground.TRANSPARENT_LEVEL
+                         and fg_image[im_idx+1] == MatrixBackground.TRANSPARENT_LEVEL
+                         and fg_image[im_idx+2] == MatrixBackground.TRANSPARENT_LEVEL)):
+                    self.np[np_idx] = (fg_image[im_idx], fg_image[im_idx+1], fg_image[im_idx+2])
                 else:
-                    self.np[np_idx] = (0, 0, 0) if bg_image is None else (bg_image[np_idx*3], bg_image[np_idx*3+1], bg_image[np_idx*3+2])
+                    if char[i] & (1 << self.width - 1 - j):
+                        if fixed_adjusted_color is None:
+                            adjusted_color = self.adjust_for_brightness(color_any[i*8+j])
+                            self.np[np_idx] = adjusted_color
+                        else:
+                            self.np[np_idx] = fixed_adjusted_color
+                    else:
+                        self.np[np_idx] = (0, 0, 0) if bg_image is None else (bg_image[im_idx], bg_image[im_idx+1], bg_image[im_idx+2])
         self.np.write()
         return True
 
@@ -99,16 +121,3 @@ class ws2812b_matrix:
 
     def set_background(self, background):
         self.background = background
-
-    def wheel(self, pos):
-        # Input a value 0 to 255 to get a color value.
-        # The colors are a transition r - g - b - back to r.
-        if pos < 0 or pos > 255:
-            return (0, 0, 0)
-        if pos < 85:
-            return (255 - pos * 3, pos * 3, 0)
-        if pos < 170:
-            pos -= 85
-            return (0, 255 - pos * 3, pos * 3)
-        pos -= 170
-        return (pos * 3, 0, 255 - pos * 3)
