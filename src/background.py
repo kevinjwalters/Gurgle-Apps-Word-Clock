@@ -86,26 +86,29 @@ EPOCH_T_NS = 2
 class MatrixBackground:
     TRANSPARENT_LEVEL = 255
     TRANSPARENT = (TRANSPARENT_LEVEL, TRANSPARENT_LEVEL, TRANSPARENT_LEVEL)
+    BLACK = (0, 0, 0)
 
     _images = {}
     _UNDEF_TIME = ((1970, 1, 1, 0, 0, 0, 3, 1),
                    0,
                    0)
 
-    def __init__(self, width, height, spacing_mm=None):
+    def __init__(self, width, height, spacing_mm=None, *, layers=("bg",)):
         self.layout = Layout.getLayout(width, height, spacing_mm)
-        self.image = bytearray(width * height * 3)
+        self.layers = layers
+        self.images = [self.getImage(width, height, layer) for layer in layers]
+        self.image = self.images[0]  # the image for first layer
         self.update_rate = 0
         self.running = False
         self._start_time = [0] * 3
         self._time = list(self._UNDEF_TIME)
 
     @classmethod
-    def getImage(cls, width, height):
-        image = cls._images.get((width, height))
+    def getImage(cls, width, height, layer):
+        image = cls._images.get((width, height, layer))
         if image is None:
             image = bytearray(width * height * 3)
-            cls._images[(width, height)] = image
+            cls._images[(width, height, layer)] = image
         return image
 
     def renderBackground(self, lut):
@@ -115,11 +118,13 @@ class MatrixBackground:
         return None
 
     def clearScreen(self, color=None):
-        color = self.TRANSPARENT if color is None else color
-        for idx in range(0, len(self.image), 3):
-            self.image[idx] = color[0]
-            self.image[idx + 1] = color[1]
-            self.image[idx + 2] = color[2]
+        for idx, layer in enumerate(self.layers):
+            color = (self.TRANSPARENT if layer == "fg" else self.BLACK) if color is None else color
+            image = self.images[idx]
+            for im_idx in range(0, len(self.image), 3):
+                image[im_idx] = color[0]
+                image[im_idx + 1] = color[1]
+                image[im_idx + 2] = color[2]
 
     def start(self, local_time, epoch_time, epoch_time_ns):
         self._start_time[LOCAL_T] = local_time
@@ -137,7 +142,7 @@ class MatrixBackground:
         self._time[EPOCH_T_S] = epoch_time
         self._time[EPOCH_T_NS] = epoch_time_ns
 
-    def _write(self, text, color, lut, *,
+    def _write(self,  text, color, image, lut, *,
                shift_x=0, shift_y=0):
         char_list = matrix_fonts.textFont1.get(text)
         if char_list is None:
@@ -156,12 +161,12 @@ class MatrixBackground:
             row_val = row >> shift_x if shift_x > 0 else (row << (0 - shift_x) if shift_x < 0 else row)
             for j in range(width):
                 pixel = row_val & (1 << width - 1 - j)
-                self.image[idx] = lut[color[0]] if pixel else 0
-                self.image[idx + 1] = lut[color[1]] if pixel else 0
-                self.image[idx + 2] = lut[color[2]] if pixel else 0
+                image[idx] = lut[color[0]] if pixel else 0
+                image[idx + 1] = lut[color[1]] if pixel else 0
+                image[idx + 2] = lut[color[2]] if pixel else 0
                 idx += 3
 
-    def _write_sprite(self, sprite, palette, lut, *,
+    def _write_sprite(self, sprite, palette, image, lut, *,
                       intensity=1,
                       width=8, height=8, shift_x=0, shift_y=0):
         s_idx = -1
@@ -183,10 +188,9 @@ class MatrixBackground:
                     g = lut[round(color[1] * intensity)]
                     b = lut[round(color[2] * intensity)]
                 idx = 3 * (pos_y * d_width + pos_x)
-                self.image[idx] = r
-                self.image[idx + 1] = g
-                self.image[idx + 2] = b
-
+                image[idx] = r
+                image[idx + 1] = g
+                image[idx + 2] = b
 
 
 # Field offsets in compact, efficient, slightly ugly _rain_drops
@@ -312,7 +316,6 @@ class MinutesOffsetMB(MatrixBackground):
         minute = self._time[LOCAL_T][4]
         rounded_minute = round(minute / 5) * 5
         error = minute - rounded_minute
-        print("OFFSET", error)
         self.clearScreen()
         r = lut[self.color[0]]
         g = lut[self.color[1]]
@@ -352,6 +355,7 @@ class MinutesDigitMB(MatrixBackground):
                     offset_y = seconds + 1
                     digit = self._last_digit
 
-        self._write(chr(ord('0') + digit), self.color, lut,
+        self._write(chr(ord('0') + digit), self.color,
+                    self.image, lut,
                     shift_y=self._pos_y + offset_y)
         return self.image
