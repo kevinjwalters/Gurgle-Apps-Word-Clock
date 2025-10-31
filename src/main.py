@@ -12,8 +12,12 @@ import json
 import matrix_fonts
 import urandom as random
 from board import Board
-
 import socket
+from collections import OrderedDict
+
+from captouch import TouchPad
+from primitives import Pushbutton
+
 
 config_file = 'config.json'
 
@@ -45,6 +49,8 @@ HEIGHT = 8
 
 disable_access_point = False
 light_sensor_pin = None
+touch_pin = None
+
 brightness = 2
 # Color data for different modes
 single_color = (0, 0, 255)
@@ -393,6 +399,24 @@ def set_background_mode(new_background_mode, save=True):
         config['BACKGROUND_MODE'] = new_background_mode
         save_config(config)
 
+def set_display_mode(new_display_mode, save=True):
+    global current_display_mode
+    current_display_mode = new_display_mode
+    if save:
+        config['DISPLAY_MODE'] = new_display_mode
+        save_config(config)
+
+def next_display_mode():
+    modes = list(display_modes.keys())
+    idx = modes.index(current_display_mode)
+    return modes[(idx + 1) % len(modes)]
+
+def next_background_mode():
+    modes = list(background_modes.keys())
+    idx = modes.index(current_background_mode)
+    return modes[(idx + 1) % len(modes)]
+
+
 def display_rainbow_mode(word):
     ws2812b_matrix.show_char_with_color_array(word, ws2812b_matrix.get_rainbow_array())
 
@@ -599,6 +623,12 @@ async def connect_to_wifi():
 
 async def main():
     global ntp_synced_at, last_wifi_connected_time, last_wifi_disconnected_time, disable_access_point, ambient_light
+
+    if button is not None:
+        pb = Pushbutton(button, sense=False, suppress=True)
+        pb.release_func(lambda : set_display_mode(next_display_mode(), save=False))  # TODO - remove save=False
+        pb.long_func(lambda : set_background_mode(next_background_mode(), save=False))  # TODO - remove save=False
+
     ap_connnected = False
     await connect_to_wifi()
     if not server.is_wifi_connected() and not disable_access_point:
@@ -632,6 +662,7 @@ async def main():
 
         if light_sensor_pin is not None:
             set_brightness(brightness, save=False)
+
         time_to_matrix()
         if ntp_synced_at < (epoch_time - 3600) and server.is_wifi_connected(): # Sync time every hour
             good_sync = await sync_ntp_time()
@@ -642,22 +673,21 @@ async def main():
         # calculate approximate pause based on desired frames per second
         if background_modes[current_background_mode].running:
             target_rate = background_modes[current_background_mode].update_rate
+
         pause_s = 1.0 / target_rate if target_rate > 0 else 10
         await asyncio.sleep(pause_s)
 
-display_modes = {
-    DISPLAY_MODE_RAINBOW: display_rainbow_mode,
-    DISPLAY_MODE_SINGLE_COLOR: display_single_color_mode,
-    DISPLAY_MODE_COLOR_PER_WORD: display_color_per_word_mode,
-    DISPLAY_MODE_RANDOM: display_random_mode
-}
+display_modes = OrderedDict([(DISPLAY_MODE_RAINBOW, display_rainbow_mode),
+                             (DISPLAY_MODE_SINGLE_COLOR, display_single_color_mode),
+                             (DISPLAY_MODE_COLOR_PER_WORD, display_color_per_word_mode),
+                             (DISPLAY_MODE_RANDOM, display_random_mode)
+                            ])
 
-background_modes = {
-    BACKGROUND_BLANK: MatrixBackground(WIDTH, HEIGHT),
-    BACKGROUND_DIGITAL_RAIN: DigitalRainMB(WIDTH, HEIGHT),
-    BACKGROUND_MINUTES_OFFSET: MinutesOffsetMB(WIDTH, HEIGHT),
-    BACKGROUND_MINUTES_DIGIT: MinutesDigitMB(WIDTH, HEIGHT)
-}
+background_modes = OrderedDict([(BACKGROUND_BLANK, MatrixBackground(WIDTH, HEIGHT)),
+                                (BACKGROUND_DIGITAL_RAIN, DigitalRainMB(WIDTH, HEIGHT)),
+                                (BACKGROUND_MINUTES_OFFSET, MinutesOffsetMB(WIDTH, HEIGHT)),
+                                (BACKGROUND_MINUTES_DIGIT, MinutesDigitMB(WIDTH, HEIGHT))
+                               ])
 
 config = read_config()
 
@@ -674,11 +704,12 @@ current_background_mode = config.get('BACKGROUND_MODE', BACKGROUND_BLANK)
 time_offset = config.get('TIME_OFFSET', 0)
 disable_access_point = config.get('DISABLE_ACCESS_POINT', False)
 light_sensor_pin = config.get('LIGHT_SENSOR_PIN')
+touch_pin = config.get('TOUCH_PIN')
 if brightness is None:
     brightness = 17 if config['ENABLE_MAX7219'] else (15 if config['ENABLE_HT16K33'] else 2)
 
 ambient_light = read_ambient_light()
-
+button = None if touch_pin is None else TouchPad(touch_pin)
 
 if config['ENABLE_HT16K33']:
     scan_for_devices()
