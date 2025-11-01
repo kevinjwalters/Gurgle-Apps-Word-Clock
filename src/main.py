@@ -421,7 +421,7 @@ def display_rainbow_mode(word):
     ws2812b_matrix.show_char_with_color_array(word, ws2812b_matrix.get_rainbow_array())
 
 def display_random_mode(word):
-    random_array = ws2812b_matrix.get_rainbow_array()
+    random_array = list(ws2812b_matrix.get_rainbow_array())
     for i in range(len(random_array)):
         j = random.randint(0, len(random_array) - 1)
         random_array[i], random_array[j] = random_array[j], random_array[i]
