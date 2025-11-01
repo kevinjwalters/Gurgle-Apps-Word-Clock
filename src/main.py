@@ -657,13 +657,25 @@ async def button_very_long():
     #await asyncio.sleep_ms(500)
     time.sleep_ms(500)
 
+async def brightness_track_ambient():
+    global ambient_light
+    # Once a second update the ambient reading with simple IIR filtering
+    # and set the brightness on display after that
+    while True:
+        ambient_light = ambient_light * 0.875 + read_ambient_light() * 0.125
+        set_brightness(brightness, save=False)
+        await asyncio.sleep_ms(996)
+
 async def main():
-    global ntp_synced_at, last_wifi_connected_time, last_wifi_disconnected_time, disable_access_point, ambient_light
+    global ntp_synced_at, last_wifi_connected_time, last_wifi_disconnected_time, disable_access_point
 
     if button is not None:
         pb = Pushbutton(button, sense=False, suppress=True)
         pb.release_func(lambda : set_display_mode(next_display_mode(), save=False))
         pb.long_func(button_long, (pb,))
+
+    if light_sensor_pin is not None:
+        task_bta = asyncio.create_task(brightness_track_ambient())
 
     ap_connnected = False
     await connect_to_wifi()
@@ -671,7 +683,6 @@ async def main():
         ap_connnected = server.start_access_point('gurgleapps', 'gurgleapps')
         await scroll_message(matrix_fonts.textFont1, "No Wi-Fi", 0.05)
     print("Access Point active: " + str(ap_connnected))
-    last_ambient_at = 0
     target_rate = 0
     background_on = False
     while True:
@@ -691,14 +702,6 @@ async def main():
                     print("Access Point started: " + str(ap_connnected))
 
         epoch_time = time.time()
-        # Once a second update the ambient reading with simple IIR filtering
-        if last_ambient_at != epoch_time:
-            ambient_light = ambient_light * 0.875 + read_ambient_light() * 0.125
-            last_ambient_at = epoch_time
-
-        if light_sensor_pin is not None:
-            set_brightness(brightness, save=False)
-
         time_to_matrix()
         if ntp_synced_at < (epoch_time - 3600) and server.is_wifi_connected(): # Sync time every hour
             good_sync = await sync_ntp_time()
