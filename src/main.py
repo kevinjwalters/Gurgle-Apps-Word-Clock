@@ -663,7 +663,7 @@ async def main():
     if button is not None:
         pb = Pushbutton(button, sense=False, suppress=True)
         pb.release_func(lambda : set_display_mode(next_display_mode(), save=False))
-        pb.long_func(lambda p: await button_long(p), (pb,))
+        pb.long_func(button_long, (pb,))
 
     ap_connnected = False
     await connect_to_wifi()
