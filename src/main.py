@@ -15,9 +15,14 @@ from board import Board
 import socket
 from collections import OrderedDict
 
-from captouch import TouchPad
-from primitives import Pushbutton
+board_type = Board().type
 
+if board_type in Board.BoardType.FAMILY_PICO:
+    try:
+        from primitives import Pushbutton
+        from captouch_rp2 import TouchPad
+    except ImportError:
+        pass
 
 config_file = 'config.json'
 
@@ -38,7 +43,6 @@ BACKGROUND_MINUTES_DIGIT = 'minutes_digit'
 
 current_background_mode = BACKGROUND_BLANK
 
-board_type = Board().type
 
 # Board specific constants
 PICO_BASE_ADC = 26
@@ -709,7 +713,7 @@ if brightness is None:
     brightness = 17 if config['ENABLE_MAX7219'] else (15 if config['ENABLE_HT16K33'] else 2)
 
 ambient_light = read_ambient_light()
-button = None if touch_pin is None else TouchPad(touch_pin)
+button = None if touch_pin is None or globals().get("TouchPad") is None else TouchPad(touch_pin)
 
 if config['ENABLE_HT16K33']:
     scan_for_devices()
