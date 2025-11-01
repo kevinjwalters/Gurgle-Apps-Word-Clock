@@ -51,6 +51,9 @@ PICO_BASE_ADC = 26
 WIDTH = 8
 HEIGHT = 8
 
+# Addition time to Pushbutton's long press 1000ms for a very long press
+VERY_LONG_EXTRA_MS = 2_000
+
 disable_access_point = False
 light_sensor_pin = None
 touch_pin = None
@@ -113,6 +116,7 @@ clockFont = {
     '9': [0x7c,0xc6,0xc6,0x7e,0x06,0x0c,0x78,0x00],
     '.': [0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00],
     'wifi': [0x3c,0x42,0x99,0xa5,0x24,0x00,0x18,0x18],
+    'save': [0x7e, 0xc3, 0x60, 0x38, 0x0c, 0x06, 0xc3, 0x7e],
     'full': [0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff]
 }
 
@@ -624,14 +628,42 @@ async def connect_to_wifi():
         print("No Wi-Fi SSID set")
         return False
 
+async def button_long(pbtn):
+    # Implement a very long press by checking if button still held down
+    start_ms = time.ticks_ms()
+    while True:
+        held_ms = time.ticks_diff(time.ticks_ms(), start_ms)
+        if held_ms >= VERY_LONG_EXTRA_MS or not pbtn.rawstate():
+            break
+        asyncio.sleep_ms(40)
+
+    if held_ms >= VERY_LONG_EXTRA_MS:
+        await button_very_long()
+    else:
+        set_background_mode(next_background_mode(), save=False)
+
+async def button_very_long():
+    if config['ENABLE_WS2812B']:
+        ws2812b_matrix.show_char_with_color_array(clockFont['save'], ws2812b_matrix.get_rainbow_array())
+    if config['ENABLE_MAX7219']:
+        spi_matrix.show_char(clockFont['save'])
+    if config['ENABLE_HT16K33']:
+        i2c_matrix.show_char(i2c_matrix.reverse_char(clockFont['save']))
+    config['DISPLAY_MODE'] = current_display_mode
+    config['BACKGROUND_MODE'] = current_background_mode
+    save_config(config)
+    # pause to allow S for save to be seen
+    # asyncio version can't be used until updates in main are temporarily suspended
+    #await asyncio.sleep_ms(500)
+    time.sleep_ms(500)
 
 async def main():
     global ntp_synced_at, last_wifi_connected_time, last_wifi_disconnected_time, disable_access_point, ambient_light
 
     if button is not None:
         pb = Pushbutton(button, sense=False, suppress=True)
-        pb.release_func(lambda : set_display_mode(next_display_mode(), save=False))  # TODO - remove save=False
-        pb.long_func(lambda : set_background_mode(next_background_mode(), save=False))  # TODO - remove save=False
+        pb.release_func(lambda : set_display_mode(next_display_mode(), save=False))
+        pb.long_func(lambda p: await button_long(p), (pb,))
 
     ap_connnected = False
     await connect_to_wifi()
