@@ -39,7 +39,7 @@ class ws2812b_matrix:
         self.max_brightness = 15
         self.gamma_correction = True
         count = self.width * self.height
-        self._rainbow = [ wheel(int(x * 256 / count)) for x in range(count)]
+        self._rainbow = tuple([wheel(int(x * 256 / count)) for x in range(count)])
 
         self.set_brightness(self.brightness)
 
