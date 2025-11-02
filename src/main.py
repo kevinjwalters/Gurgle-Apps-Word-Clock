@@ -713,7 +713,7 @@ async def main():
         if background_modes[current_background_mode].running:
             target_rate = background_modes[current_background_mode].update_rate
 
-        pause_s = 1.0 / target_rate if target_rate > 0 else 10
+        pause_s = 1.0 / target_rate if target_rate > 0 else 1
         await asyncio.sleep(pause_s)
 
 display_modes = OrderedDict([(DISPLAY_MODE_RAINBOW, display_rainbow_mode),
