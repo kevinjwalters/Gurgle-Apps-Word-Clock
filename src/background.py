@@ -355,7 +355,8 @@ class MinutesDigitMB(MatrixBackground):
                     offset_y = seconds + 1
                     digit = self._last_digit
 
-        self._write(chr(ord('0') + digit), self.color,
-                    self.image, lut,
-                    shift_y=self._pos_y + offset_y)
+        if digit is not None:
+            self._write(chr(ord('0') + digit), self.color,
+                        self.image, lut,
+                        shift_y=self._pos_y + offset_y)
         return self.image
