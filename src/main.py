@@ -702,12 +702,13 @@ async def main():
                     print("Access Point started: " + str(ap_connnected))
 
         epoch_time = time.time()
-        time_to_matrix()
         if ntp_synced_at < (epoch_time - 3600) and server.is_wifi_connected(): # Sync time every hour
             good_sync = await sync_ntp_time()
             if good_sync and not background_on:
                 set_background_mode(current_background_mode, save=False)
                 background_on = True
+
+        time_to_matrix()
 
         # calculate approximate pause based on desired frames per second
         if background_modes[current_background_mode].running:
