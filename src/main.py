@@ -429,10 +429,6 @@ def display_rainbow_mode(word):
     ws2812b_matrix.show_char_with_color_array(word, ws2812b_matrix.get_rainbow_array())
 
 def display_random_mode(word):
-    random_array = list(ws2812b_matrix.get_rainbow_array())
-    for i in range(len(random_array)):
-        j = random.randint(0, len(random_array) - 1)
-        random_array[i], random_array[j] = random_array[j], random_array[i]
     ws2812b_matrix.show_char_with_color_array(word, random_array)
 
 def display_single_color_mode(word):
@@ -763,6 +759,21 @@ if config['ENABLE_WS2812B']:
     ws2812b_matrix = ws2812b_matrix(config['WS2812B_PIN'],
                                     WIDTH, HEIGHT)
 
+random_array = list(ws2812b_matrix.get_rainbow_array())
+def mixup_colors():
+    global random_array
+    for i in range(len(random_array)):
+        j = random.randint(0, len(random_array) - 1)
+        random_array[i], random_array[j] = random_array[j], random_array[i]
+
+async def randomise_colors():
+    while True:
+        if current_display_mode == DISPLAY_MODE_RANDOM:
+            mixup_colors()
+        await asyncio.sleep(10)
+
+mixup_colors()  ### Give them an initial churn
+
 current_brightness = None # this is the numerical level
 set_brightness(brightness, save=False)
 
@@ -779,4 +790,5 @@ server.set_default_index_pages(["time.html"])
 server.set_cors(True)
 setup_routes(server)
 
+task_rc = asyncio.create_task(randomise_colors())
 asyncio.run(server.start_server_with_background_task(main))
