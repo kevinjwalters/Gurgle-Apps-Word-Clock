@@ -655,12 +655,13 @@ display_modes = {
     DISPLAY_MODE_RANDOM: display_random_mode
 }
 
-background_modes = OrderedDict([(BACKGROUND_BLANK, MatrixBackground(WIDTH, HEIGHT)),
-                                (BACKGROUND_DIGITAL_RAIN, DigitalRainMB(WIDTH, HEIGHT)),
-                                (BACKGROUND_SNOW, SnowMB(WIDTH, HEIGHT)),
-                                (BACKGROUND_MINUTES_OFFSET, MinutesOffsetMB(WIDTH, HEIGHT)),
-                                (BACKGROUND_MINUTES_DIGIT, MinutesDigitMB(WIDTH, HEIGHT))
-                               ])
+background_modes = {
+    BACKGROUND_BLANK: MatrixBackground(WIDTH, HEIGHT),
+    BACKGROUND_DIGITAL_RAIN: DigitalRainMB(WIDTH, HEIGHT),
+    BACKGROUND_SNOW: SnowMB(WIDTH, HEIGHT),
+    BACKGROUND_MINUTES_OFFSET: MinutesOffsetMB(WIDTH, HEIGHT),
+    BACKGROUND_MINUTES_DIGIT: MinutesDigitMB(WIDTH, HEIGHT)
+}
 
 config = read_config()
 
