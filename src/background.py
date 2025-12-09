@@ -200,18 +200,28 @@ _DP_SPEED = 2
 _DP_TRAIL_LENGTH = 3
 _DP_HEAD_BRI = 4
 
-class DigitalRainMB(MatrixBackground):
-    """A falling digital rain effect in green remniscent of a certain science fiction/action film."""
-    def __init__(self, width, height, spacing_mm=None):
+class PrecipitationBackground(MatrixBackground):
+    """Parent class for rain and snow."""
+    def __init__(self, width, height, spacing_mm=None, *,
+                 max_drops=None,
+                 drop_color=None):
         super().__init__(width, height, spacing_mm)
 
         self.update_rate = 15
         self._near_distance = 0.55 * self.layout.spacing_mm
         self._gone_y = self.layout.bottom_y + self.layout.spacing_mm
-        self._max_drops = 12
+        self._max_drops = max_drops
         self._last_time = [0] * 3
         # This is a flattened list of [x, y, speed, trail_length, head_bri]
         self._rain_drops = array.array('f', [0.0] * (5 * self._max_drops))
+        self._drop_color = drop_color
+        self._color_channel = None
+        if drop_color[1] == 0 and drop_color[2] == 0:
+            self._color_channel = 0
+        elif drop_color[0] == 0 and drop_color[2] == 0:
+            self._color_channel = 1
+        elif drop_color[0] == 0 and drop_color[1] == 0:
+            self._color_channel = 2
 
     @classmethod
     def _raindrops_prob(cls, duration_s):
@@ -221,6 +231,9 @@ class DigitalRainMB(MatrixBackground):
                              else (17 * 8 * random.random() if selecta < 0.975
                                    else (50 * 8 * random.random())))
         return round(count_per_s * duration_s)
+
+    def _trailLength(self):
+        raise NotImplementedError
 
     def _removeadddrops(self, dur_s):
         for drop_no in range(self._max_drops):
@@ -243,8 +256,8 @@ class DigitalRainMB(MatrixBackground):
                                                                 self.layout.width_mm * 0.52)
             self._rain_drops[base_idx + _DP_Y] = random.uniform(0 - self.layout.height_mm * 0.6,
                                                                 0 - self.layout.height_mm * 0.5)
-            self._rain_drops[base_idx + _DP_SPEED] = random.uniform(10, 25) if random.random() < 0.95 else random.uniform(3, 90)
-            self._rain_drops[base_idx + _DP_TRAIL_LENGTH] = random.uniform(10.0, 55.0) * 0.5 + random.uniform(25.0, 35.0) * 0.5
+            self._rain_drops[base_idx + _DP_SPEED] = self._speed()
+            self._rain_drops[base_idx + _DP_TRAIL_LENGTH] = self._trailLength()
             self._rain_drops[base_idx + _DP_HEAD_BRI] = random.uniform(0.3, 1.0)
             drops_added += 1
             if drops_added >= new_drop_count:
@@ -260,11 +273,15 @@ class DigitalRainMB(MatrixBackground):
 
         # Clear green values
         target = self.image
-        for e_idx in range(1, len(target), 3):
-            target[e_idx] = 0
+        if self._color_channel is None:
+            self.clearScreen()
+        else:
+            for e_idx in range(self._color_channel, len(target), 3):
+                target[e_idx] = 0
         # Render rain drops in green
         il_radius_outer = (self.layout.pixel_diamater + 1) / 2.0
         il_radius_inner = il_radius_outer / 3.0
+        drop_r, drop_g, drop_b = self._drop_color
         for drop_no in range(self._max_drops):
             x, y, speed, trail_length, head_bri = self._rain_drops[drop_no * 5:(drop_no * 5 + 5)]
             if head_bri == 0.0:
@@ -280,10 +297,17 @@ class DigitalRainMB(MatrixBackground):
                     dist_bri =  1.0 if distances[0] < il_radius_inner else max(0, (il_radius_outer - distances[0])) / il_radius_outer
                     brightness = trail_bri * head_bri * dist_bri
                     if brightness > 0.0:
-                        # Only green is set, red and blue are left at 0
-                        g_level = min(255, int(brightness * 256.0))
                         # Use a max() strategy to combine "droplets" on LEDs
-                        target[idx * 3 + 1] = max(lut[g_level], target[idx * 3 + 1])
+                        im_idx = idx * 3
+                        if drop_r:
+                            level = min(drop_r, round(brightness * drop_r))
+                            target[im_idx] = max(lut[level], target[im_idx])
+                        if drop_g:
+                            level = min(drop_g, round(brightness * drop_g))
+                            target[im_idx + 1] = max(lut[level], target[im_idx + 1])
+                        if drop_b:
+                            level = min(drop_b, round(brightness * drop_b))
+                            target[im_idx + 2] = max(lut[level], target[im_idx + 2])
 
         self._last_time[:] = self._time
         return self.image
@@ -293,6 +317,35 @@ class DigitalRainMB(MatrixBackground):
         # "Remove" all the rain drops by setting brightness to zero
         for drop_no in range(self._max_drops):
             self._rain_drops[drop_no * 5 + _DP_HEAD_BRI] = 0.0
+
+
+class DigitalRainMB(PrecipitationBackground):
+    """A falling digital rain effect in green remniscent of a certain science fiction/action film."""
+
+    def __init__(self, width, height, spacing_mm=None):
+        super().__init__(width, height, spacing_mm,
+                         max_drops=12,
+                         drop_color=(0, 255, 0))
+
+    def _trailLength(self):
+        return random.uniform(10.0, 55.0) * 0.5 + random.uniform(25.0, 35.0) * 0.5
+
+    def _speed(self):
+        return random.uniform(10, 25) if random.random() < 0.95 else random.uniform(3, 90)
+
+
+class SnowMB(PrecipitationBackground):
+    """A snow effect for the Juggalos & Juggalettes dreaming of a white Christmas."""
+    def __init__(self, width, height, spacing_mm=None):
+        super().__init__(width, height, spacing_mm,
+                         max_drops=5,
+                         drop_color=(140, 140, 140))
+
+    def _trailLength(self):
+        return 3
+
+    def _speed(self):
+        return random.uniform(15, 20)
 
 
 class MinutesOffsetMB(MatrixBackground):

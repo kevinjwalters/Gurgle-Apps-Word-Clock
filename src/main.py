@@ -6,7 +6,7 @@ import ntptime
 import alt_ntptime
 import utime as time
 from gurgleapps_webserver import GurgleAppsWebserver
-from background import MatrixBackground, DigitalRainMB, MinutesOffsetMB, MinutesDigitMB
+from background import MatrixBackground, DigitalRainMB, SnowMB, MinutesOffsetMB, MinutesDigitMB
 import uasyncio as asyncio
 import json
 import matrix_fonts
@@ -29,6 +29,7 @@ current_display_mode = DISPLAY_MODE_RAINBOW
 
 BACKGROUND_BLANK = 'blank'
 BACKGROUND_DIGITAL_RAIN = 'digital_rain'
+BACKGROUND_SNOW = 'snow'
 BACKGROUND_MINUTES_OFFSET = 'minutes_offset'
 BACKGROUND_MINUTES_DIGIT = 'minutes_digit'
 
@@ -654,12 +655,12 @@ display_modes = {
     DISPLAY_MODE_RANDOM: display_random_mode
 }
 
-background_modes = {
-    BACKGROUND_BLANK: MatrixBackground(WIDTH, HEIGHT),
-    BACKGROUND_DIGITAL_RAIN: DigitalRainMB(WIDTH, HEIGHT),
-    BACKGROUND_MINUTES_OFFSET: MinutesOffsetMB(WIDTH, HEIGHT),
-    BACKGROUND_MINUTES_DIGIT: MinutesDigitMB(WIDTH, HEIGHT)
-}
+background_modes = OrderedDict([(BACKGROUND_BLANK, MatrixBackground(WIDTH, HEIGHT)),
+                                (BACKGROUND_DIGITAL_RAIN, DigitalRainMB(WIDTH, HEIGHT)),
+                                (BACKGROUND_SNOW, SnowMB(WIDTH, HEIGHT)),
+                                (BACKGROUND_MINUTES_OFFSET, MinutesOffsetMB(WIDTH, HEIGHT)),
+                                (BACKGROUND_MINUTES_DIGIT, MinutesDigitMB(WIDTH, HEIGHT))
+                               ])
 
 config = read_config()
 
